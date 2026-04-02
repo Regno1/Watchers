@@ -265,6 +265,7 @@ socket.on("media-uploaded", ({ dataUrl, type }) => {
 function replaceIframeWithMedia(dataUrl, type) {
   const container = youtubePlayer.parentElement;
 
+  // remove old media
   const existingMedia = container.querySelectorAll("video, img");
   existingMedia.forEach((el) => el.remove());
 
@@ -272,10 +273,18 @@ function replaceIframeWithMedia(dataUrl, type) {
   youtubePlayer.src = "";
 
   let element;
+
   if (type.startsWith("video")) {
     element = document.createElement("video");
     element.controls = true;
     element.autoplay = true;
+    element.muted = true;         
+    element.playsInline = true;
+
+    element.onloadeddata = () => {
+      element.play().catch(() => {});
+    };
+
   } else if (type.startsWith("image")) {
     element = document.createElement("img");
   }
@@ -285,8 +294,8 @@ function replaceIframeWithMedia(dataUrl, type) {
     element.width = 560;
     element.height = 315;
     element.style.borderRadius = "8px";
+
     container.appendChild(element);
   }
 }
-
 startMyVideo();
