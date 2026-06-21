@@ -3,96 +3,104 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>video calling app</title>
-    <link rel="stylesheet" href="css/video.css">
+    <title>Watchers | Watch Party</title>
+    <meta name="description" content="Watch movies, videos, and media together with friends in real-time with video calling and chat.">
+    <link rel="stylesheet" href="/css/video.css">
     <script src="/js/socket.io.js" defer></script>
     <script src="/js/main.js" defer></script>
 </head>
 <body>
     <nav>
-        <img src="images\Picsart_25-03-22_22-53-34-296.png" alt="Watchers" height="60" width="190" >
-      
-        <span class="sideMenuButton" 
-            onclick="openNavbar()">
-            &#9776
-        </span>
-
+        <div class="logo">
+            <a href="/">
+                <img src="/images/Picsart_25-03-22_22-53-34-296.png" alt="Watchers" height="32" onerror="this.style.display='none'; this.parentElement.innerHTML='<span style=\'font-size:1.2rem;font-weight:800;color:#7c3aed;\'>WATCHERS</span>'">
+            </a>
+        </div>
+        <span class="sideMenuButton" onclick="openNavbar()">&#9776;</span>
         <div class="navbar">
             <ul>
-                <li><a href="#Home">Home</a></li>
-                <li><a href="#">About</a></li>
-                <li><a href="#">Features</a></li>
+                <li><a href="/">Home</a></li>
             </ul>
         </div>
     </nav>
 
+    <!-- Join Modal Overlay -->
+    <div id="join-overlay" class="overlay">
+        <div class="join-modal glass-panel">
+            <h2>Join Watch Party</h2>
+            <input id="room-id" type="text" placeholder="Room ID (e.g., party-abc123)">
+            <input id="username" type="text" placeholder="Your Nickname">
+            <button id="join-room-btn" class="btn-primary" style="height: 48px; font-size: 1rem;">Join Room</button>
+        </div>
+    </div>
 
-</ul>
     <main class="main-container">
-        <aside class="caller-list-wrapper">
-            <h1 class="caller-list-heading h-font">Contacts</h1>
+        <!-- Left: Participants Sidebar -->
+        <aside class="left-sidebar glass-panel">
+            <h2 class="caller-list-heading">Participants</h2>
             <ul id="allusers" class="caller-list">
-                <!-- <li>
-                    <span>You)</span>
-                    <button class="call-btn"><img width="20" src="/images/phone.png" alt=""></button>
-                </li> -->
+                <!-- Users populate here -->
             </ul>
         </aside>
-         <!-- YouTube Section -->
- <div class="youtube-section">
-    <input type="text" id="youtube-url" placeholder="Enter YouTube URL" />
-    <button id="load-youtube-video">Load Video</button>
-    <input type="file" id="video-url" placeholder="Upload your file" />
-    <button id="load-video">Upload Video</button>
-    
-    <iframe id="youtube-player" 
-        width="560" 
-        height="315" 
-        src="" 
-        frameborder="0" 
-        allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
-        allowfullscreen>
-    </iframe>
-</div>
-        <section class="video"> </section>
-        <section class="video-call-container">
-            <div class="username-input">
-                <input id="username" type="text" placeholder="Create Nickname"><button id="create-user">Create</button>
-            </div>
-            <div class="video-streams">
-                
-                <div class="local-video">
-                    <video id="localVideo" autoplay muted playsinline ></video>
-                </div>
-                
-                <div class="remote-video">
-                    <video id="remoteVideo" autoplay muted playsinline></video>
-                </div>
-            </div>
-            <div class="call-controls">
-                <button id="end-call-btn" class="call call-disconnect d-none">
-                    <img height="30px" width="30px" src="/images/rejected.png" >
-                </button>
-                <button id="mute-call-btn" class="call call-mute d-none">
-                    <img height="30px" width="30px" src="/images/mute.png" >
-                </button>
-                    
+
+        <!-- Middle: Media Sharing -->
+        <section class="middle-section glass-panel">
+            
+            <div id="room-header" class="room-header">
+                <h2>Watch Party</h2>
+                <span id="display-room-id" class="room-id-badge" title="Click to copy Room ID"></span>
             </div>
 
+            <div class="media-controls">
+                <input type="text" id="youtube-url" placeholder="Paste YouTube URL..." />
+                <button id="load-youtube-video" class="btn-primary">Load</button>
+                <input type="file" id="video-url" accept="video/*,image/*" />
+                <button id="load-video" class="btn-primary">Upload</button>
+            </div>
+            <div class="media-player-container" id="media-player-container">
+                <iframe id="youtube-player" 
+                    src="" 
+                    frameborder="0" 
+                    allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
+                    allowfullscreen>
+                </iframe>
+            </div>
+        </section>
 
-
-
-            <section class="chat-container">
-                <div class="chat-messages" id="chat-messages" >
-                    <!-- Chat messages will appear here -->
+        <!-- Right: Video Call & Chat -->
+        <aside class="right-sidebar">
+            
+            <!-- Draggable Video Call Container -->
+            <div id="video-call-wrapper" class="video-call-wrapper glass-panel">
+                <div class="drag-handle" id="drag-handle">
+                    <span class="drag-title">Video Call</span>
+                    <div class="call-controls">
+                        <button id="mute-call-btn" class="call-btn-circle call-mute" title="Mute/Unmute">
+                            <img src="/images/mute.png" alt="Mute">
+                        </button>
+                    </div>
                 </div>
-                <div class="chat-input">
+                <div class="video-grid" id="video-grid">
+                    <div class="video-wrapper">
+                        <video id="localVideo" autoplay muted playsinline></video>
+                        <span class="video-label" id="local-label">You</span>
+                    </div>
+                    <!-- Remote videos will be injected here dynamically -->
+                </div>
+            </div>
+
+            <!-- Chat Container -->
+            <section class="chat-container glass-panel">
+                <div class="chat-header">Chat</div>
+                <div class="chat-messages" id="chat-messages">
+                    <!-- Chat messages -->
+                </div>
+                <div class="chat-input-row">
                     <input type="text" id="chat-input" placeholder="Type a message..." />
-                    <button id="send-chat-btn">Send</button>
+                    <button id="send-chat-btn" class="btn-primary">Send</button>
                 </div>
             </section>
-        </section>
+        </aside>
     </main>
-    
 </body>
 </html>

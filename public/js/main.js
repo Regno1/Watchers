@@ -1,95 +1,49 @@
-const createUserBtn = document.getElementById("create-user");
-const username = document.getElementById("username");
+const socket = io();
+
+// UI Elements
+const joinOverlay = document.getElementById("join-overlay");
+const roomIdInput = document.getElementById("room-id");
+const usernameInput = document.getElementById("username");
+const joinRoomBtn = document.getElementById("join-room-btn");
+
+// Check sessionStorage for room ID
+const savedRoomId = sessionStorage.getItem('watchers_room_id');
+if (savedRoomId) {
+    roomIdInput.value = savedRoomId;
+    sessionStorage.removeItem('watchers_room_id');
+}
+
 const allusersHtml = document.getElementById("allusers");
 const localVideo = document.getElementById("localVideo");
-const remoteVideo = document.getElementById("remoteVideo");
-const endCallBtn = document.getElementById("end-call-btn");
+const videoGrid = document.getElementById("video-grid");
 const muteButton = document.getElementById("mute-call-btn");
+
 const youtubeUrlInput = document.getElementById("youtube-url");
 const youtubePlayer = document.getElementById("youtube-player");
 const loadYoutubeVideoButton = document.getElementById("load-youtube-video");
 const uploadInput = document.getElementById("video-url");
 const uploadBtn = document.getElementById("load-video");
+const mediaPlayerContainer = document.getElementById("media-player-container");
+
 const chatInput = document.getElementById("chat-input");
 const chatMessages = document.getElementById("chat-messages");
 const sendChatBtn = document.getElementById("send-chat-btn");
 
-const socket = io();
+// State
 let localStream;
-let caller = [];
+let myUsername = "";
+let myRoomId = "";
 let isMuted = false;
+let peers = {};
 
-const PeerConnection = (() => {
-  let peerConnection;
-
-  const createPeerConnection = () => {
-    const config = {
-      iceServers: [{ urls: "stun:stun.l.google.com:19302" }],
-    };
-
-    peerConnection = new RTCPeerConnection(config);
-
-    localStream.getTracks().forEach((track) => {
-      peerConnection.addTrack(track, localStream);
-    });
-
-    peerConnection.ontrack = (event) => {
-      remoteVideo.srcObject = event.streams[0];
-    };
-
-    peerConnection.onicecandidate = (event) => {
-      if (event.candidate) {
-        socket.emit("icecandidate", event.candidate);
-      }
-    };
-
-    return peerConnection;
-  };
-
-  return {
-    getInstance: () => peerConnection || createPeerConnection(),
-  };
-})();
-
-createUserBtn.addEventListener("click", () => {
-  if (username.value !== "") {
-    document.querySelector(".username-input").style.display = "none";
-    socket.emit("join-user", username.value);
-  }
-});
-
-endCallBtn.addEventListener("click", () => {
-  socket.emit("call-ended", caller);
-});
-
-muteButton.addEventListener("click", () => {
-  const localStream = localVideo.srcObject;
-  if (!localStream) return console.error("No local stream found.");
-
-  const audioTracks = localStream.getAudioTracks();
-  if (audioTracks.length > 0) {
-    isMuted = !isMuted;
-    audioTracks[0].enabled = !isMuted;
-    muteButton.innerHTML = isMuted
-      ? '<img height="30px" width="30px" src="/images/unmute.png">'
-      : '<img height="30px" width="30px" src="/images/mute.png">';
-  }
-});
-
-const startCall = async (user) => {
-  const pc = PeerConnection.getInstance();
-  const offer = await pc.createOffer();
-  await pc.setLocalDescription(offer);
-  socket.emit("offer", { from: username.value, to: user, offer });
+// WebRTC Config
+const rtcConfig = {
+  iceServers: [{ urls: "stun:stun.l.google.com:19302" }],
 };
 
-const endCall = () => {
-  const pc = PeerConnection.getInstance();
-  if (pc) pc.close();
-  endCallBtn.style.display = "none";
-  muteButton.style.display = "none";
-};
-
+// ==========================
+// 1. Media Setup
+// ==========================
 const startMyVideo = async () => {
   try {
     const stream = await navigator.mediaDevices.getUserMedia({
@@ -100,67 +54,215 @@ const startMyVideo = async () => {
     localVideo.srcObject = stream;
   } catch (error) {
     console.error("Error accessing media devices:", error);
+    alert("Could not access camera/microphone. Please allow permissions.");
   }
 };
 
-socket.on("joined", (allusers) => {
-  allusersHtml.innerHTML = "";
-  for (const user in allusers) {
-    const li = document.createElement("li");
-    li.textContent = `${user} ${user === username.value ? "(You)" : ""}`;
-
-    if (user !== username.value) {
-      const button = document.createElement("button");
-      button.classList.add("call-btn");
-      button.addEventListener("click", () => startCall(user));
-
-      const img = document.createElement("img");
-      img.src = "/images/phone.png";
-      img.width = 20;
-
-      button.appendChild(img);
-      li.appendChild(button);
-    }
-
-    allusersHtml.appendChild(li);
+// ==========================
+// 2. Room Joining
+// ==========================
+joinRoomBtn.addEventListener("click", async () => {
+  myUsername = usernameInput.value.trim();
+  myRoomId = roomIdInput.value.trim();
+  
+  if (myUsername && myRoomId) {
+    joinOverlay.style.display = "none";
+    await startMyVideo();
+    socket.emit("join-room", { roomId: myRoomId, username: myUsername });
+    
+    // Update local video label
+    const localLabel = document.getElementById("local-label");
+    if (localLabel) localLabel.textContent = myUsername + " (You)";
+  } else {
+    alert("Please enter both Room ID and Nickname.");
   }
 });
 
-socket.on("offer", async ({ from, to, offer }) => {
-  const pc = PeerConnection.getInstance();
+// Also support Enter key
+roomIdInput.addEventListener("keydown", (e) => { if (e.key === "Enter") joinRoomBtn.click(); });
+usernameInput.addEventListener("keydown", (e) => { if (e.key === "Enter") joinRoomBtn.click(); });
+
+// ==========================
+// 3. Socket Events - Room Management
+// ==========================
+function updateParticipantsList(users) {
+  allusersHtml.innerHTML = "";
+  for (const id in users) {
+    const user = users[id];
+    const li = document.createElement("li");
+    li.textContent = `${user.username} ${id === socket.id ? "(You)" : ""}`;
+    allusersHtml.appendChild(li);
+  }
+}
+
+socket.on("room-joined", ({ roomId, users, host, me }) => {
+  updateParticipantsList(users);
+  
+  const roomHeader = document.getElementById("room-header");
+  const displayRoomId = document.getElementById("display-room-id");
+  if (roomHeader && displayRoomId) {
+      displayRoomId.textContent = roomId;
+      roomHeader.style.display = 'flex';
+      displayRoomId.onclick = () => {
+          navigator.clipboard.writeText(roomId);
+          const originalText = displayRoomId.textContent;
+          displayRoomId.textContent = "✓ Copied!";
+          setTimeout(() => displayRoomId.textContent = originalText, 2000);
+      };
+  }
+});
+
+socket.on("user-joined", async ({ username, id, users }) => {
+  updateParticipantsList(users);
+  
+  if (localStream) {
+    createPeerConnection(id, username);
+    const pc = peers[id].pc;
+    try {
+      const offer = await pc.createOffer();
+      await pc.setLocalDescription(offer);
+      socket.emit("offer", { to: id, offer, username: myUsername });
+    } catch (err) {
+      console.error("Error creating offer:", err);
+    }
+  }
+});
+
+socket.on("user-disconnected", ({ id, users }) => {
+  updateParticipantsList(users);
+  if (peers[id]) {
+    peers[id].pc.close();
+    if (peers[id].videoWrapper) {
+      peers[id].videoWrapper.remove();
+    }
+    delete peers[id];
+  }
+});
+
+// ==========================
+// 4. WebRTC Mesh Logic
+// ==========================
+function createPeerConnection(remoteSocketId, remoteUsername) {
+  const pc = new RTCPeerConnection(rtcConfig);
+
+  if (localStream) {
+    localStream.getTracks().forEach((track) => pc.addTrack(track, localStream));
+  }
+
+  pc.ontrack = (event) => {
+    if (!peers[remoteSocketId].video) {
+      const wrapper = document.createElement("div");
+      wrapper.className = "video-wrapper";
+      
+      const video = document.createElement("video");
+      video.autoplay = true;
+      video.playsInline = true;
+      video.srcObject = event.streams[0];
+      
+      const label = document.createElement("span");
+      label.className = "video-label";
+      label.textContent = peers[remoteSocketId].username || "Guest";
+      
+      wrapper.appendChild(video);
+      wrapper.appendChild(label);
+      videoGrid.appendChild(wrapper);
+      
+      peers[remoteSocketId].video = video;
+      peers[remoteSocketId].videoWrapper = wrapper;
+    }
+  };
+
+  pc.onicecandidate = (event) => {
+    if (event.candidate) {
+      socket.emit("icecandidate", { to: remoteSocketId, candidate: event.candidate });
+    }
+  };
+
+  if (!peers[remoteSocketId]) {
+      peers[remoteSocketId] = { pc, username: remoteUsername, iceQueue: [] };
+  } else {
+      peers[remoteSocketId].pc = pc;
+      peers[remoteSocketId].username = remoteUsername;
+  }
+  
+  return pc;
+}
+
+socket.on("offer", async ({ from, offer, username }) => {
+  const pc = createPeerConnection(from, username || "User");
   await pc.setRemoteDescription(offer);
   const answer = await pc.createAnswer();
   await pc.setLocalDescription(answer);
-  socket.emit("answer", { from, to, answer: pc.localDescription });
-  caller = [from, to];
-});
-
-socket.on("answer", async ({ answer }) => {
-  const pc = PeerConnection.getInstance();
-  await pc.setRemoteDescription(answer);
-  endCallBtn.style.display = "block";
-  muteButton.style.display = "block";
-});
-
-socket.on("icecandidate", async (candidate) => {
-  const pc = PeerConnection.getInstance();
-  try {
-    await pc.addIceCandidate(new RTCIceCandidate(candidate));
-  } catch (err) {
-    console.error("Error adding ICE candidate:", err);
+  socket.emit("answer", { to: from, answer });
+  
+  if (peers[from].iceQueue && peers[from].iceQueue.length > 0) {
+      for (const candidate of peers[from].iceQueue) {
+          await pc.addIceCandidate(new RTCIceCandidate(candidate));
+      }
+      peers[from].iceQueue = [];
   }
 });
 
-socket.on("call-ended", () => {
-  endCall();
+socket.on("answer", async ({ from, answer }) => {
+  if (peers[from]) {
+    await peers[from].pc.setRemoteDescription(answer);
+    if (peers[from].iceQueue && peers[from].iceQueue.length > 0) {
+        for (const candidate of peers[from].iceQueue) {
+            await peers[from].pc.addIceCandidate(new RTCIceCandidate(candidate));
+        }
+        peers[from].iceQueue = [];
+    }
+  }
 });
 
-/* ---------- Chat ---------- */
+socket.on("icecandidate", async ({ from, candidate }) => {
+  if (peers[from]) {
+    try {
+      if (peers[from].pc && peers[from].pc.remoteDescription) {
+          await peers[from].pc.addIceCandidate(new RTCIceCandidate(candidate));
+      } else {
+          peers[from].iceQueue.push(candidate);
+      }
+    } catch (err) {
+      console.error("Error adding ICE candidate:", err);
+    }
+  }
+});
 
+// ==========================
+// 5. Call Controls (Mute)
+// ==========================
+muteButton.addEventListener("click", () => {
+  if (!localStream) return;
+  const audioTracks = localStream.getAudioTracks();
+  if (audioTracks.length > 0) {
+    isMuted = !isMuted;
+    audioTracks[0].enabled = !isMuted;
+
+    // Show unmute icon when muted (to indicate "click to unmute")
+    muteButton.innerHTML = isMuted
+      ? '<img src="/images/unmute.png" alt="Unmute">'
+      : '<img src="/images/mute.png" alt="Mute">';
+    
+    if (isMuted) {
+      muteButton.style.backgroundColor = 'var(--danger-color)';
+      muteButton.style.borderColor = 'var(--danger-color)';
+      muteButton.title = 'Click to Unmute';
+    } else {
+      muteButton.style.backgroundColor = '';
+      muteButton.style.borderColor = '';
+      muteButton.title = 'Click to Mute';
+    }
+  }
+});
+
+// ==========================
+// 6. Chat Logic
+// ==========================
 sendChatBtn.addEventListener("click", () => {
   const message = chatInput.value.trim();
   if (message) {
-    socket.emit("chat-message", { username: username.value, message });
+    socket.emit("chat-message", { username: myUsername, message });
     addChatMessage({ username: "You", message });
     chatInput.value = "";
   }
@@ -177,27 +279,34 @@ socket.on("chat-message", addChatMessage);
 
 function addChatMessage({ username, message }) {
   const messageDiv = document.createElement("div");
-  messageDiv.innerHTML = `<strong>${username}:</strong> ${message}`;
+  messageDiv.className = "chat-msg";
+  messageDiv.innerHTML = `<strong>${username}</strong><div class="chat-msg-text">${escapeHtml(message)}</div>`;
   chatMessages.appendChild(messageDiv);
+  chatMessages.scrollTop = chatMessages.scrollHeight;
 }
 
-/* ---------- YouTube sync ---------- */
+function escapeHtml(text) {
+  const div = document.createElement('div');
+  div.textContent = text;
+  return div.innerHTML;
+}
 
-function showYoutubePlayer() {
-  const container = youtubePlayer.parentElement;
-
-  const otherMedia = container.querySelectorAll("video, img");
+// ==========================
+// 7. Media Sharing
+// ==========================
+function clearMediaPlayer() {
+  const otherMedia = mediaPlayerContainer.querySelectorAll("video, img");
   otherMedia.forEach((el) => el.remove());
-
-  youtubePlayer.style.display = "block";
 }
 
+// YouTube Loading
 loadYoutubeVideoButton.addEventListener("click", () => {
   const youtubeUrl = youtubeUrlInput.value.trim();
   const videoId = extractYoutubeVideoId(youtubeUrl);
 
   if (videoId) {
-    showYoutubePlayer();
+    clearMediaPlayer();
+    youtubePlayer.style.display = "block";
 
     const timestamp = Date.now();
     youtubePlayer.src = `https://www.youtube.com/embed/${videoId}?enablejsapi=1&autoplay=1`;
@@ -208,54 +317,65 @@ loadYoutubeVideoButton.addEventListener("click", () => {
 });
 
 socket.on("sync-youtube-video", ({ videoId, timestamp }) => {
-  showYoutubePlayer();
+  clearMediaPlayer();
+  youtubePlayer.style.display = "block";
   const delay = Date.now() - timestamp;
-  youtubePlayer.src = `https://www.youtube.com/embed/${videoId}?enablejsapi=1&autoplay=1&start=${Math.floor(
-    delay / 1000
-  )}`;
-});
-
-// optional if using YT IFrame API global `player`
-socket.on("play-video", (timestamp) => {
-  if (window.player) {
-    player.seekTo(timestamp, true);
-    player.playVideo();
-  }
-});
-
-socket.on("pause-video", (timestamp) => {
-  if (window.player) {
-    player.seekTo(timestamp, true);
-    player.pauseVideo();
-  }
+  youtubePlayer.src = `https://www.youtube.com/embed/${videoId}?enablejsapi=1&autoplay=1&start=${Math.floor(delay / 1000)}`;
 });
 
 function extractYoutubeVideoId(url) {
-  const regex =
-    /(?:https?:\/\/)?(?:www\.)?(?:youtube\.com\/(?:watch\?v=|embed\/|v\/|shorts\/)|youtu\.be\/)([a-zA-Z0-9_-]{11})/;
+  const regex = /(?:https?:\/\/)?(?:www\.)?(?:youtube\.com\/(?:watch\?v=|embed\/|v\/|shorts\/)|youtu\.be\/)([a-zA-Z0-9_-]{11})/;
   const match = url.match(regex);
   return match ? match[1] : null;
 }
 
-/* ---------- Upload local video/image ---------- */
-
+// File Upload
 uploadBtn.addEventListener("click", () => {
   const file = uploadInput.files[0];
-  if (
-    !file ||
-    !(file.type.startsWith("video") || file.type.startsWith("image"))
-  ) {
+  if (!file) {
+    alert("Please select a file to upload.");
+    return;
+  }
+  
+  let fileType = file.type;
+  if (!fileType) {
+    const ext = file.name.split('.').pop().toLowerCase();
+    if (['mp4', 'webm', 'ogg', 'mkv', 'mov'].includes(ext)) fileType = 'video/' + ext;
+    else if (['jpg', 'jpeg', 'png', 'gif', 'webp'].includes(ext)) fileType = 'image/' + ext;
+  }
+
+  if (!fileType || !(fileType.startsWith("video") || fileType.startsWith("image"))) {
     alert("Please upload a valid video or image file.");
     return;
   }
 
-  const reader = new FileReader();
-  reader.onload = (e) => {
-    const dataUrl = e.target.result;
-    socket.emit("media-uploaded", { dataUrl, type: file.type });
-    replaceIframeWithMedia(dataUrl, file.type);
-  };
-  reader.readAsDataURL(file);
+  const formData = new FormData();
+  formData.append("video", file);
+
+  uploadBtn.textContent = "Uploading...";
+  uploadBtn.disabled = true;
+
+  fetch("/upload", {
+    method: "POST",
+    body: formData
+  })
+  .then(res => res.json())
+  .then(data => {
+    if (data.success) {
+      socket.emit("media-uploaded", { dataUrl: data.path, type: fileType });
+      replaceIframeWithMedia(data.path, fileType);
+    } else {
+      alert("Upload failed.");
+    }
+  })
+  .catch(err => {
+    console.error("Upload error:", err);
+    alert("Error uploading media.");
+  })
+  .finally(() => {
+    uploadBtn.textContent = "Upload";
+    uploadBtn.disabled = false;
+  });
 });
 
 socket.on("media-uploaded", ({ dataUrl, type }) => {
@@ -263,39 +383,87 @@ socket.on("media-uploaded", ({ dataUrl, type }) => {
 });
 
 function replaceIframeWithMedia(dataUrl, type) {
-  const container = youtubePlayer.parentElement;
-
-  // remove old media
-  const existingMedia = container.querySelectorAll("video, img");
-  existingMedia.forEach((el) => el.remove());
-
+  clearMediaPlayer();
   youtubePlayer.style.display = "none";
   youtubePlayer.src = "";
 
   let element;
-
   if (type.startsWith("video")) {
     element = document.createElement("video");
     element.controls = true;
     element.autoplay = true;
     element.muted = true;         
     element.playsInline = true;
-
-    element.onloadeddata = () => {
-      element.play().catch(() => {});
-    };
-
+    element.onloadeddata = () => element.play().catch(() => {});
   } else if (type.startsWith("image")) {
     element = document.createElement("img");
   }
 
   if (element) {
     element.src = dataUrl;
-    element.width = 560;
-    element.height = 315;
-    element.style.borderRadius = "8px";
-
-    container.appendChild(element);
+    mediaPlayerContainer.appendChild(element);
   }
 }
-startMyVideo();
+
+// ==========================
+// 8. Draggable Video Container
+// ==========================
+const dragHandle = document.getElementById("drag-handle");
+const videoCallWrapper = document.getElementById("video-call-wrapper");
+
+let isDragging = false;
+let currentX;
+let currentY;
+let initialX;
+let initialY;
+let xOffset = 0;
+let yOffset = 0;
+
+dragHandle.addEventListener("mousedown", dragStart);
+document.addEventListener("mouseup", dragEnd);
+document.addEventListener("mousemove", drag);
+
+function dragStart(e) {
+  if (e.target.closest('.call-controls')) return;
+
+  initialX = e.clientX - xOffset;
+  initialY = e.clientY - yOffset;
+  if (e.target === dragHandle || dragHandle.contains(e.target)) {
+    isDragging = true;
+    if (videoCallWrapper.style.position !== 'absolute') {
+        const rect = videoCallWrapper.getBoundingClientRect();
+        videoCallWrapper.style.position = 'absolute';
+        videoCallWrapper.style.top = rect.top + 'px';
+        videoCallWrapper.style.left = rect.left + 'px';
+        videoCallWrapper.style.width = rect.width + 'px';
+        videoCallWrapper.style.zIndex = 1000;
+        
+        xOffset = 0;
+        yOffset = 0;
+        initialX = e.clientX;
+        initialY = e.clientY;
+        videoCallWrapper.style.transform = `translate3d(0px, 0px, 0)`;
+    }
+  }
+}
+
+function dragEnd(e) {
+  initialX = currentX;
+  initialY = currentY;
+  isDragging = false;
+}
+
+function drag(e) {
+  if (isDragging) {
+    e.preventDefault();
+    currentX = e.clientX - initialX;
+    currentY = e.clientY - initialY;
+    xOffset = currentX;
+    yOffset = currentY;
+    setTranslate(currentX, currentY, videoCallWrapper);
+  }
+}
+
+function setTranslate(xPos, yPos, el) {
+  el.style.transform = `translate3d(${xPos}px, ${yPos}px, 0)`;
+}
