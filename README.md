@@ -1,84 +1,64 @@
-# Watchers – Watch Party & Video Call Web Application
+# WatchParty
 
-A real-time video calling and watch party web application where users can call, chat, sync YouTube videos, upload media, and watch together.
+A synchronized YouTube watch-party platform that lets friends watch videos together in real time, no matter where they are — complete with video calling and live chat.
 
-Live Demo:  
-https://watchers-watchparty-web-application.onrender.com
-
----
+**Live Demo:** [watchers-watchparty-web-application.onrender.com](https://watchers-watchparty-web-application.onrender.com/)
 
 ## Features
 
-### Authentication
-- Secure signup and login using MongoDB and Mongoose
-- Password hashing with bcrypt
-- Session-based authentication with express-session
-
-### Real-Time Video Calling
-- WebRTC peer-to-peer calling
-- Socket.IO used for signaling:
-  - offer
-  - answer
-  - icecandidate
-  - end-call
-
-### Online User System
-- Users join with a username
-- User list updates in real time
-- Detects disconnects and removes users automatically
-
-### Watch Party Mode
-- Syncs YouTube video across all users
-- Play and pause synchronization
-- Supports uploaded videos
-- Media sharing via base64 data URLs
-
-### File Uploads
-- Upload local videos using multer
-- Files stored in the /uploads folder
-- Uploaded videos are shareable with others instantly
-
-### Pages
-- /signup → User registration
-- /login → User login
-- / → Main application (requires login)
-
----
-
-## Live Demo
-
-Hosted on Render:  
-https://watchers-watchparty-web-application.onrender.com
-
-Use this link to test login, calling, chat, and watch-party features.
-
----
+- **Synchronized video playback** — play, pause, and seek events sync across all users in the room instantly
+- **Real-time video calling** — see and talk to everyone in the room while watching
+- **Live chat/messaging** — text chat alongside the video for reactions and discussion
+- **Responsive UI** — works smoothly across different screen sizes
 
 ## Tech Stack
 
-- Backend: Node.js, Express  
-- Real-time: Socket.IO  
-- Database: MongoDB (Mongoose)  
-- Authentication: express-session, bcryptjs  
-- File Handling: multer  
-- Frontend: HTML, CSS, JavaScript (WebRTC + Socket.IO)
+**Frontend:** React
+**Backend:** Node.js
+**Real-time Communication:** Socket.IO
 
----
+## How It Works
 
-## Project Structure
+1. A user creates a watch-party room and shares the room link with friends
+2. Everyone who joins connects via Socket.IO, keeping video playback state (play/pause/seek) synchronized across all clients
+3. Video calling and chat run alongside the synced player so the group can react and talk in real time
+
+## Getting Started
+
+### Prerequisites
+- Node.js installed on your machine
+
+### Installation
 
 ```bash
-.
-├── app
-│   ├── login.html
-│   ├── signup.html
-│   └── vc.html
-├── public
-│   ├── css
-│   └── js
-├── uploads
-├── server.js
-├── package.json
-└── .env
+# Clone the repository
+git clone https://github.com/regno001/watchers.git
+cd watchers
 
-working model is done 
+# Install dependencies (adjust paths below to match your folder structure,
+# e.g. separate /client and /server directories)
+npm install
+```
+
+### Running Locally
+
+```bash
+# Start the backend server
+npm run server
+
+# In a separate terminal, start the frontend
+npm run client
+```
+
+> Note: Update the commands above to match your actual npm scripts / folder structure (e.g. if client and server are in separate directories, `cd` into each and run `npm start` there).
+
+## Author
+
+**Rahul Rawat**
+- Portfolio: [rahulrawat.netlify.app](http://rahulrawat.netlify.app)
+- LinkedIn: [rahul-rawat-992863321](https://linkedin.com/in/rahul-rawat-992863321)
+- GitHub: [@regno001](https://github.com/regno001)
+
+## License
+
+This project is open source and available for learning and reference purposes.
